@@ -1,6 +1,6 @@
 #!/usr/bin/sh
 
-DEPENDENCIES=$'panic-halt = \"0.2.0\"\n
+SETTINGS=$'panic-halt = \"0.2.0\"\n
 [dependencies.arduino-hal]
 git = "https://github.com/Rahix/avr-hal"
 rev = "bc30bd4"
@@ -11,6 +11,11 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[[bin]]
+name = "app"
+test = false
+bench = false
 '
 
 TARGET_SPECS=$'[build]
@@ -78,9 +83,11 @@ initialise_project() {
 	cd $PROJECT_NAME
 }
 
-add_dependencies() {
+add_project_settings() {
+	PROJECT_NAME=$1
 	echo "Adding avr-hal and panic-halt to the dependencies..."
-	echo "$DEPENDENCIES" >> Cargo.toml
+	echo "$SETTINGS" >> Cargo.toml
+	sed -i 's/app/$PROJECT_NAME/g' Cargo.toml
 }
 
 update_cargo() {
@@ -117,7 +124,7 @@ generate_flashing_script() {
 ### Main script body ###
 PROJECT_NAME=$1
 initialise_project $PROJECT_NAME &&
-add_dependencies &&
+add_project_settings &&
 update_cargo &&
 setup_board_specification &&
 override_rust_version &&
