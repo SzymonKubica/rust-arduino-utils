@@ -87,7 +87,10 @@ add_project_settings() {
 	PROJECT_NAME=$1
 	echo "Adding avr-hal and panic-halt to the dependencies..."
 	echo "$SETTINGS" >> Cargo.toml
+	echo "Setting executable name"
 	sed -i 's/app/$PROJECT_NAME/g' Cargo.toml
+	echo "Removing edition information..."
+	sed -i '/^edition/d' Cargo.toml
 }
 
 update_cargo() {
