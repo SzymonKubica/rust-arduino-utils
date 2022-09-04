@@ -1,21 +1,33 @@
 #!/usr/bin/sh
 
-SETTINGS=$'panic-halt = \"0.2.0\"\n
-[dependencies.arduino-hal]
-git = "https://github.com/Rahix/avr-hal"
-rev = "bc30bd4"
-features = ["arduino-uno"]
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
+SETTINGS=$'
+panic-halt = "0.2.0"
+ufmt = "0.1.0"
+nb = "0.1.2"
+embedded-hal = "0.2.3"
 
 [[bin]]
 name = "app"
 test = false
 bench = false
+
+[dependencies.arduino-hal]
+git = "https://github.com/rahix/avr-hal"
+rev = "1aacefb335517f85d0de858231e11055d9768cdf"
+features = ["arduino-uno"]
+
+# Configure the build for minimal size - AVRs have very little program memory
+[profile.dev]
+panic = "abort"
+lto = true
+opt-level = "s"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+debug = true
+lto = true
+opt-level = "s"
 '
 
 TARGET_SPECS=$'[build]
@@ -76,6 +88,12 @@ fn main() -> ! {
 }
 '
 
+TOOLCHAIN=$'[toolchain]
+channel = "nightly-2022-07-10"
+components = ["rust-src"]
+profile = "minimal"
+'
+
 initialise_project() {
 	PROJECT_NAME=$1
 	echo "Initialising a new rust project..."
@@ -88,9 +106,14 @@ add_project_settings() {
 	echo "Adding avr-hal and panic-halt to the dependencies..."
 	echo "$SETTINGS" >> Cargo.toml
 	echo "Setting executable name"
-	sed -i 's/app/$PROJECT_NAME/g' Cargo.toml
+	sed -i "s/app/$PROJECT_NAME/g" Cargo.toml
 	echo "Removing edition information..."
 	sed -i '/^edition/d' Cargo.toml
+}
+
+setup_toolchain() {
+	echo "Setting up the toolchain..."
+	echo "$TOOLCHAIN" >> rust-toolchain.toml
 }
 
 update_cargo() {
@@ -105,11 +128,6 @@ setup_board_specification() {
 	echo "Adding the avr-atmega328p specification..."
 	echo  "$BOARD_SPECS" >> avr-atmega328p.json
 	cd ..
-}
-
-override_rust_version() {
-	echo "Setting the version of rust to be compatible with the hal..."
-	rustup override set nightly-2021-01-07
 }
 
 override_template_file() {
@@ -127,9 +145,9 @@ generate_flashing_script() {
 ### Main script body ###
 PROJECT_NAME=$1
 initialise_project $PROJECT_NAME &&
-add_project_settings &&
+add_project_settings $PROJECT_NAME &&
+setup_toolchain &&
 update_cargo &&
 setup_board_specification &&
-override_rust_version &&
 override_template_file &&
 generate_flashing_script $PROJECT_NAME
