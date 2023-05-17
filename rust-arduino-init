@@ -1,0 +1,153 @@
+#!/usr/bin/sh
+
+SETTINGS=$'
+panic-halt = "0.2.0"
+ufmt = "0.1.0"
+nb = "0.1.2"
+embedded-hal = "0.2.3"
+
+[[bin]]
+name = "app"
+test = false
+bench = false
+
+[dependencies.arduino-hal]
+git = "https://github.com/rahix/avr-hal"
+rev = "1aacefb335517f85d0de858231e11055d9768cdf"
+features = ["arduino-uno"]
+
+# Configure the build for minimal size - AVRs have very little program memory
+[profile.dev]
+panic = "abort"
+lto = true
+opt-level = "s"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+debug = true
+lto = true
+opt-level = "s"
+'
+
+TARGET_SPECS=$'[build]
+target = ".cargo/avr-atmega328p.json"
+[unstable]
+build-std = ["core"]
+'
+
+BOARD_SPECS=$'{
+"arch": "avr",
+"atomic-cas": false,
+"cpu": "atmega328p",
+"data-layout": "e-P1-p:16:8-i8:8-i16:8-i32:8-i64:8-f32:8-f64:8-n8-a:8",
+"eh-frame-header": false,
+"exe-suffix": ".elf",
+"executables": true,
+"late-link-args": {
+	"gcc": [
+		"-lgcc"
+	]
+},
+"linker": "avr-gcc",
+"llvm-target": "avr-unknown-unknown",
+"max-atomic-width": 8,
+"no-default-libraries": false,
+"pre-link-args": {
+	"gcc": [
+		"-mmcu=atmega328p"
+	]
+},
+"target-c-int-width": "16",
+"target-pointer-width": "16"
+}'
+
+MAIN_TEMPLATE=$'#![no_std]
+#![no_main]
+
+use core::panic::PanicInfo;
+
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
+
+#[arduino_hal::entry]
+fn main() -> ! {
+    loop {
+        let peripherals = arduino_hal::Peripherals::take().unwrap();
+        let pins = arduino_hal::pins!(peripherals);
+
+        let mut led = pins.d13.into_output();
+
+        loop {
+            led.toggle();
+            arduino_hal::delay_ms(1000);
+        }
+    }
+}
+'
+
+TOOLCHAIN=$'[toolchain]
+channel = "nightly-2022-07-10"
+components = ["rust-src"]
+profile = "minimal"
+'
+
+initialise_project() {
+	PROJECT_NAME=$1
+	echo "Initialising a new rust project..."
+	cargo new $PROJECT_NAME
+	cd $PROJECT_NAME
+}
+
+add_project_settings() {
+	PROJECT_NAME=$1
+	echo "Adding avr-hal and panic-halt to the dependencies..."
+	echo "$SETTINGS" >> Cargo.toml
+	echo "Setting executable name"
+	sed -i "s/app/$PROJECT_NAME/g" Cargo.toml
+	echo "Removing edition information..."
+	sed -i '/^edition/d' Cargo.toml
+}
+
+setup_toolchain() {
+	echo "Setting up the toolchain..."
+	echo "$TOOLCHAIN" >> rust-toolchain.toml
+}
+
+update_cargo() {
+	echo "Updating Cargo..."
+	cargo update
+}
+
+setup_board_specification() {
+	mkdir .cargo
+	cd .cargo
+	echo  "$TARGET_SPECS" >> config.toml
+	echo "Adding the avr-atmega328p specification..."
+	echo  "$BOARD_SPECS" >> avr-atmega328p.json
+	cd ..
+}
+
+override_template_file() {
+	echo "Overriding the default main.rs file with the arduino skeleton file..."
+	echo "$MAIN_TEMPLATE" > src/main.rs
+}
+
+generate_flashing_script() {
+	PROJECT_NAME=$1
+	echo "Generating the flashing script..."
+	echo "avrdude -p m328p -c arduino -P /dev/ttyACM0 -b 115200 -U flash:w:target/avr-atmega328p/debug/$PROJECT_NAME.elf" >> flash
+	chmod +x flash
+}
+
+### Main script body ###
+PROJECT_NAME=$1
+initialise_project $PROJECT_NAME &&
+add_project_settings $PROJECT_NAME &&
+setup_toolchain &&
+update_cargo &&
+setup_board_specification &&
+override_template_file &&
+generate_flashing_script $PROJECT_NAME
